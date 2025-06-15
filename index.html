@@ -1222,7 +1222,7 @@
             
             // Create gain
             gainB = audioContext.createGain();
-            gainB.gain.value = 0.3;
+            gainB.gain.value = dBToAmp(params.MIC_MONITOR_GAIN_DB);
             
             // Create panner
             pannerB = audioContext.createStereoPanner();
@@ -1730,6 +1730,7 @@
             document.getElementById('micMonitorGainValue').textContent = e.target.value + ' dB';
             if (micGainA) micGainA.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
             if (micGainB) micGainB.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
+            if (gainB) gainB.gain.value = dBToAmp(params.MIC_MONITOR_GAIN_DB);
         });
 
         document.getElementById('micFilterFreq').addEventListener('input', (e) => {
