@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KNOT: Umwelten im Dialog - Audio Implementation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #888;
+            margin-bottom: 40px;
+            font-size: 1.1rem;
+        }
+
+        .control-panel {
+            background: #1a1a1a;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+
+        .umwelt-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .umwelt {
+            background: #222;
+            border-radius: 10px;
+            padding: 20px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .umwelt::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            opacity: 0.8;
+        }
+
+        .umwelt-a::before {
+            background: linear-gradient(90deg, #667eea, #5a67d8);
+        }
+
+        .umwelt-b::before {
+            background: linear-gradient(90deg, #764ba2, #8b5cf6);
+        }
+
+        .umwelt h3 {
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+        }
+
+        .data-display {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .data-item {
+            background: #2a2a2a;
+            padding: 10px;
+            border-radius: 5px;
+            text-align: center;
+        }
+
+        .data-label {
+            color: #888;
+            font-size: 0.85rem;
+            margin-bottom: 5px;
+        }
+
+        .data-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .data-value.bpm {
+            color: #667eea;
+        }
+
+        .data-value.peak {
+            color: #764ba2;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 30px;
+        }
+
+        button {
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 30px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            background: #444;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .visualizer {
+            background: #1a1a1a;
+            border-radius: 10px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        canvas {
+            width: 100%;
+            height: 200px;
+            background: #0a0a0a;
+            border-radius: 5px;
+        }
+
+        .peak-indicator {
+            width: 100%;
+            height: 20px;
+            background: #2a2a2a;
+            border-radius: 10px;
+            margin-top: 10px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .peak-flash {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+        }
+
+        .peak-flash.active {
+            transform: translateX(100%);
+        }
+
+        .knot-status {
+            text-align: center;
+            margin-top: 20px;
+            padding: 15px;
+            background: #1a1a1a;
+            border-radius: 10px;
+        }
+
+        .knot-strength {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #444;
+            margin: 0 3px;
+            transition: all 0.3s ease;
+        }
+
+        .knot-strength.active {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
+        }
+
+        .parameter-controls {
+            margin-top: 30px;
+            padding: 20px;
+            background: #1a1a1a;
+            border-radius: 10px;
+        }
+
+        .parameter-group {
+            margin-bottom: 20px;
+        }
+
+        .parameter-group h4 {
+            margin-bottom: 10px;
+            color: #888;
+        }
+
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 10px;
+        }
+
+        .slider-label {
+            min-width: 150px;
+            font-size: 0.9rem;
+        }
+
+        input[type="range"] {
+            flex: 1;
+            height: 6px;
+            background: #333;
+            outline: none;
+            border-radius: 3px;
+            -webkit-appearance: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            border-radius: 50%;
+            cursor: pointer;
+        }
+
+        .slider-value {
+            min-width: 60px;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .status-message {
+            text-align: center;
+            padding: 10px;
+            margin: 20px 0;
+            border-radius: 5px;
+            background: #2a2a2a;
+            color: #888;
+        }
+
+        .status-message.error {
+            background: #4a2a2a;
+            color: #ff6b6b;
+        }
+
+        .status-message.success {
+            background: #2a4a2a;
+            color: #51cf66;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>KNOT: Umwelten im Dialog</h1>
+        <p class="subtitle">二つの環世界が織りなす音響的対話</p>
+
+        <div class="controls">
+            <button id="startBtn">Start Audio</button>
+            <button id="stopBtn" disabled>Stop Audio</button>
+            <button id="testA" disabled>Test Peak A</button>
+            <button id="testB" disabled>Test Peak B</button>
+        </div>
+
+        <div id="statusMessage" class="status-message"></div>
+
+        <div class="control-panel">
+            <div style="text-align: center; margin-bottom: 20px; padding: 15px; background: #2a2a2a; border-radius: 10px;">
+                <p style="margin: 0; color: #888;">
+                    <strong>Note:</strong> This system uses your microphone to detect heartbeats. 
+                    For best results, place the microphone near your chest or use a stethoscope microphone.
+                    If microphone access is denied, the system will run in test mode.
+                </p>
+            </div>
+            <div class="umwelt-container">
+                <div class="umwelt umwelt-a">
+                    <h3>Umwelt A (左)</h3>
+                    <div class="data-display">
+                        <div class="data-item">
+                            <div class="data-label">BPM</div>
+                            <div class="data-value bpm" id="bpmA">--</div>
+                        </div>
+                        <div class="data-item">
+                            <div class="data-label">Peak</div>
+                            <div class="data-value peak" id="peakA">0.00</div>
+                        </div>
+                    </div>
+                    <div class="peak-indicator">
+                        <div class="peak-flash" id="peakFlashA"></div>
+                    </div>
+                    <canvas id="waveformA"></canvas>
+                </div>
+
+                <div class="umwelt umwelt-b">
+                    <h3>Umwelt B (右)</h3>
+                    <div class="data-display">
+                        <div class="data-item">
+                            <div class="data-label">BPM</div>
+                            <div class="data-value bpm" id="bpmB">--</div>
+                        </div>
+                        <div class="data-item">
+                            <div class="data-label">Peak</div>
+                            <div class="data-value peak" id="peakB">0.00</div>
+                        </div>
+                    </div>
+                    <div class="peak-indicator">
+                        <div class="peak-flash" id="peakFlashB"></div>
+                    </div>
+                    <canvas id="waveformB"></canvas>
+                </div>
+            </div>
+
+            <div class="knot-status">
+                <h3>KNOT Status</h3>
+                <div>
+                    <span class="knot-strength" id="knot1"></span>
+                    <span class="knot-strength" id="knot2"></span>
+                    <span class="knot-strength" id="knot3"></span>
+                    <span class="knot-strength" id="knot4"></span>
+                    <span class="knot-strength" id="knot5"></span>
+                </div>
+                <p id="knotDescription">Waiting for interaction...</p>
+            </div>
+        </div>
+
+        <div class="parameter-controls">
+            <h3>Audio Parameters</h3>
+            
+            <div class="parameter-group">
+                <h4>Input Processing</h4>
+                <div class="slider-container">
+                    <span class="slider-label">Lowpass Filter</span>
+                    <input type="range" id="lowpassFreq" min="50" max="500" value="150">
+                    <span class="slider-value" id="lowpassFreqValue">150 Hz</span>
+                </div>
+                <div class="slider-container">
+                    <span class="slider-label">Peak Threshold</span>
+                    <input type="range" id="peakThreshold" min="0.1" max="1" step="0.1" value="0.7">
+                    <span class="slider-value" id="peakThresholdValue">0.7</span>
+                </div>
+            </div>
+
+            <div class="parameter-group">
+                <h4>Sound Generation</h4>
+                <div class="slider-container">
+                    <span class="slider-label">Trigger A Frequency</span>
+                    <input type="range" id="triggerAFreq" min="200" max="1000" value="660">
+                    <span class="slider-value" id="triggerAFreqValue">660 Hz</span>
+                </div>
+                <div class="slider-container">
+                    <span class="slider-label">Drone A Frequency</span>
+                    <input type="range" id="droneAFreq" min="50" max="200" value="110">
+                    <span class="slider-value" id="droneAFreqValue">110 Hz</span>
+                </div>
+                <div class="slider-container">
+                    <span class="slider-label">Drone B Frequency</span>
+                    <input type="range" id="droneBFreq" min="50" max="200" value="130">
+                    <span class="slider-value" id="droneBFreqValue">130 Hz</span>
+                </div>
+            </div>
+
+            <div class="parameter-group">
+                <h4>KNOT Effect</h4>
+                <div class="slider-container">
+                    <span class="slider-label">Delay Base Time</span>
+                    <input type="range" id="delayBase" min="0.1" max="1" step="0.1" value="0.4">
+                    <span class="slider-value" id="delayBaseValue">0.4 s</span>
+                </div>
+                <div class="slider-container">
+                    <span class="slider-label">Modulation Amount</span>
+                    <input type="range" id="modAmount" min="0" max="0.5" step="0.05" value="0.3">
+                    <span class="slider-value" id="modAmountValue">0.3 s</span>
+                </div>
+                <div class="slider-container">
+                    <span class="slider-label">Feedback</span>
+                    <input type="range" id="feedback" min="0" max="0.8" step="0.1" value="0.4">
+                    <span class="slider-value" id="feedbackValue">0.4</span>
+                </div>
+            </div>
+
+            <div class="parameter-group">
+                <h4>Mix Levels</h4>
+                <div class="slider-container">
+                    <span class="slider-label">Pre-KNOT Gain</span>
+                    <input type="range" id="preKnotGain" min="0" max="1" step="0.1" value="0.7">
+                    <span class="slider-value" id="preKnotGainValue">0.7</span>
+                </div>
+                <div class="slider-container">
+                    <span class="slider-label">KNOT FX Gain</span>
+                    <input type="range" id="knotFxGain" min="0" max="1" step="0.1" value="0.3">
+                    <span class="slider-value" id="knotFxGainValue">0.3</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global audio analysis data for visual module integration
+        window.audioAnalysisData = {
+            A: {
+                bpm: 0,
+                peak: 0,
+                isNewPeak: false,
+                lastPeakTime: 0
+            },
+            B: {
+                bpm: 0,
+                peak: 0,
+                isNewPeak: false,
+                lastPeakTime: 0
+            }
+        };
+
+        // Audio context and nodes
+        let audioContext;
+        let isRunning = false;
+        let micStream = null;
+
+        // Audio nodes for Umwelt A
+        let sourceA, analyserA, filterA, gainA, pannerA;
+        let droneOscA, droneFilterA, droneGainA;
+        let triggerOscA, triggerGainA;
+        
+        // Audio nodes for Umwelt B
+        let sourceB, analyserB, filterB, gainB, pannerB;
+        let droneOscB, droneFilterB, droneGainB;
+        let triggerOscB, triggerGainB;
+
+        // KNOT effect nodes
+        let delayA, delayB, delayGainA, delayGainB;
+        let feedbackGainA, feedbackGainB;
+        let masterGain, fxGain;
+
+        // Test mode flag
+        let isTestMode = false;
+
+        // Parameters
+        const params = {
+            INPUT_LOWPASS_FREQ: 150,
+            PEAK_THRESHOLD: 0.7,
+            BPM_MOVING_AVG_SIZE: 5,
+            PAN_A: -1.0,
+            PAN_B: 1.0,
+            TRIGGER_A_FREQ: 660,
+            DRONE_A_BASE_FREQ: 110,
+            DRONE_B_BASE_FREQ: 130,
+            KNOT_DELAY_BASE_TIME: 0.4,
+            KNOT_DELAY_MOD_AMOUNT: 0.3,
+            KNOT_DELAY_FEEDBACK: 0.4,
+            PRE_KNOT_GAIN: 0.7,
+            KNOT_FX_GAIN: 0.3
+        };
+
+        // Heartbeat detector class
+        class HeartbeatDetector {
+            constructor(threshold = 0.7, cooldownMs = 300) {
+                this.threshold = threshold;
+                this.cooldownTime = cooldownMs;
+                this.lastPeakTime = 0;
+                this.peakHistory = [];
+                this.bpm = 0;
+            }
+
+            detectPeak(amplitude, currentTime) {
+                const timeSinceLastPeak = currentTime - this.lastPeakTime;
+                
+                if (amplitude > this.threshold && timeSinceLastPeak > this.cooldownTime) {
+                    this.lastPeakTime = currentTime;
+                    this.peakHistory.push(currentTime);
+                    
+                    // Calculate BPM from recent peaks
+                    if (this.peakHistory.length > params.BPM_MOVING_AVG_SIZE) {
+                        this.peakHistory.shift();
+                        const intervals = [];
+                        for (let i = 1; i < this.peakHistory.length; i++) {
+                            intervals.push(this.peakHistory[i] - this.peakHistory[i-1]);
+                        }
+                        const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
+                        this.bpm = 60000 / avgInterval;
+                    }
+                    
+                    return { isNewPeak: true, bpm: this.bpm, peak: amplitude };
+                }
+                
+                return { isNewPeak: false, bpm: this.bpm, peak: 0 };
+            }
+
+            reset() {
+                this.lastPeakTime = 0;
+                this.peakHistory = [];
+                this.bpm = 0;
+            }
+        }
+
+        const detectorA = new HeartbeatDetector();
+        const detectorB = new HeartbeatDetector();
+
+        // Initialize audio system
+        async function initAudio() {
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // Create master gain and fx gain
+                masterGain = audioContext.createGain();
+                masterGain.gain.value = params.PRE_KNOT_GAIN;
+                
+                fxGain = audioContext.createGain();
+                fxGain.gain.value = params.KNOT_FX_GAIN;
+                
+                masterGain.connect(audioContext.destination);
+                fxGain.connect(audioContext.destination);
+
+                // Initialize Umwelt A
+                await initUmweltA();
+                
+                // Initialize Umwelt B
+                await initUmweltB();
+                
+                // Initialize KNOT effects
+                initKnotEffects();
+                
+                // Start animation loop
+                animate();
+                
+                isRunning = true;
+                updateStatus('Audio system initialized', 'success');
+                document.getElementById('startBtn').disabled = true;
+                document.getElementById('stopBtn').disabled = false;
+                document.getElementById('testA').disabled = false;
+                document.getElementById('testB').disabled = false;
+                
+            } catch (error) {
+                console.error('Error initializing audio:', error);
+                updateStatus('Error: ' + error.message, 'error');
+            }
+        }
+
+        async function initUmweltA() {
+            // Create analyser
+            analyserA = audioContext.createAnalyser();
+            analyserA.fftSize = 2048;
+            
+            // Create filter
+            filterA = audioContext.createBiquadFilter();
+            filterA.type = 'lowpass';
+            filterA.frequency.value = params.INPUT_LOWPASS_FREQ;
+            filterA.Q.value = 1;
+            
+            // Create gain
+            gainA = audioContext.createGain();
+            gainA.gain.value = 0.3;
+            
+            // Create panner
+            pannerA = audioContext.createStereoPanner();
+            pannerA.pan.value = params.PAN_A;
+            
+            // Create drone oscillator
+            droneOscA = audioContext.createOscillator();
+            droneOscA.type = 'sawtooth';
+            droneOscA.frequency.value = params.DRONE_A_BASE_FREQ;
+            
+            droneFilterA = audioContext.createBiquadFilter();
+            droneFilterA.type = 'lowpass';
+            droneFilterA.frequency.value = 200;
+            
+            droneGainA = audioContext.createGain();
+            droneGainA.gain.value = 0.1;
+            
+            // Connect drone chain
+            droneOscA.connect(droneFilterA);
+            droneFilterA.connect(droneGainA);
+            droneGainA.connect(pannerA);
+            
+            // Connect main chain
+            filterA.connect(analyserA);
+            filterA.connect(gainA);
+            gainA.connect(pannerA);
+            pannerA.connect(masterGain);
+            
+            // Start drone
+            droneOscA.start();
+            
+            // Try to get microphone input
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: false,
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    } 
+                });
+                micStream = stream;
+                sourceA = audioContext.createMediaStreamSource(stream);
+                sourceA.connect(filterA);
+                updateStatus('Microphone A connected', 'success');
+                isTestMode = false;
+            } catch (error) {
+                console.warn('Microphone access denied, using test oscillator:', error);
+                updateStatus('Using test mode (microphone access denied)', 'error');
+                isTestMode = true;
+                
+                // Fallback to test oscillator
+                const testOsc = audioContext.createOscillator();
+                testOsc.frequency.value = 1.2; // Simulate 72 BPM heartbeat
+                const testGain = audioContext.createGain();
+                testGain.gain.value = 0;
+                testOsc.connect(testGain);
+                testGain.connect(filterA);
+                testOsc.start();
+                sourceA = testGain;
+            }
+        }
+
+        async function initUmweltB() {
+            // Create analyser
+            analyserB = audioContext.createAnalyser();
+            analyserB.fftSize = 2048;
+            
+            // Create filter
+            filterB = audioContext.createBiquadFilter();
+            filterB.type = 'lowpass';
+            filterB.frequency.value = params.INPUT_LOWPASS_FREQ;
+            filterB.Q.value = 1;
+            
+            // Create gain
+            gainB = audioContext.createGain();
+            gainB.gain.value = 0.3;
+            
+            // Create panner
+            pannerB = audioContext.createStereoPanner();
+            pannerB.pan.value = params.PAN_B;
+            
+            // Create drone oscillator
+            droneOscB = audioContext.createOscillator();
+            droneOscB.type = 'triangle';
+            droneOscB.frequency.value = params.DRONE_B_BASE_FREQ;
+            
+            droneFilterB = audioContext.createBiquadFilter();
+            droneFilterB.type = 'lowpass';
+            droneFilterB.frequency.value = 250;
+            
+            droneGainB = audioContext.createGain();
+            droneGainB.gain.value = 0.1;
+            
+            // Connect drone chain
+            droneOscB.connect(droneFilterB);
+            droneFilterB.connect(droneGainB);
+            droneGainB.connect(pannerB);
+            
+            // Connect main chain
+            filterB.connect(analyserB);
+            filterB.connect(gainB);
+            gainB.connect(pannerB);
+            pannerB.connect(masterGain);
+            
+            // Start drone
+            droneOscB.start();
+            
+            // For Umwelt B, we'll use the same microphone input but process it differently
+            // In a real two-person setup, you would have two separate microphones
+            if (micStream) {
+                // If we successfully got microphone for A, reuse the same stream
+                sourceB = audioContext.createMediaStreamSource(micStream);
+                sourceB.connect(filterB);
+            } else {
+                // Fallback to test oscillator
+                const testOsc = audioContext.createOscillator();
+                testOsc.frequency.value = 1.3; // Simulate 78 BPM heartbeat
+                const testGain = audioContext.createGain();
+                testGain.gain.value = 0;
+                testOsc.connect(testGain);
+                testGain.connect(filterB);
+                testOsc.start();
+                sourceB = testGain;
+            }
+        }
+
+        function initKnotEffects() {
+            // Create delay nodes
+            delayA = audioContext.createDelay(2);
+            delayA.delayTime.value = params.KNOT_DELAY_BASE_TIME;
+            
+            delayB = audioContext.createDelay(2);
+            delayB.delayTime.value = params.KNOT_DELAY_BASE_TIME;
+            
+            // Create feedback loops
+            feedbackGainA = audioContext.createGain();
+            feedbackGainA.gain.value = params.KNOT_DELAY_FEEDBACK;
+            
+            feedbackGainB = audioContext.createGain();
+            feedbackGainB.gain.value = params.KNOT_DELAY_FEEDBACK;
+            
+            delayGainA = audioContext.createGain();
+            delayGainA.gain.value = 0.5;
+            
+            delayGainB = audioContext.createGain();
+            delayGainB.gain.value = 0.5;
+            
+            // Connect KNOT effects
+            pannerA.connect(delayA);
+            delayA.connect(feedbackGainA);
+            feedbackGainA.connect(delayA);
+            delayA.connect(delayGainA);
+            delayGainA.connect(fxGain);
+            
+            pannerB.connect(delayB);
+            delayB.connect(feedbackGainB);
+            feedbackGainB.connect(delayB);
+            delayB.connect(delayGainB);
+            delayGainB.connect(fxGain);
+        }
+
+        function triggerSoundA() {
+            if (!audioContext) return;
+            
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            
+            osc.type = 'sine';
+            osc.frequency.value = params.TRIGGER_A_FREQ;
+            
+            gain.gain.setValueAtTime(0, audioContext.currentTime);
+            gain.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.3);
+            
+            osc.connect(gain);
+            gain.connect(pannerA);
+            
+            osc.start();
+            osc.stop(audioContext.currentTime + 0.3);
+        }
+
+        function triggerSoundB() {
+            if (!audioContext) return;
+            
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            
+            osc.type = 'triangle';
+            osc.frequency.value = params.TRIGGER_A_FREQ * 0.75;
+            
+            gain.gain.setValueAtTime(0, audioContext.currentTime);
+            gain.gain.linearRampToValueAtTime(0.25, audioContext.currentTime + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.4);
+            
+            osc.connect(gain);
+            gain.connect(pannerB);
+            
+            osc.start();
+            osc.stop(audioContext.currentTime + 0.4);
+        }
+
+        function analyzeAudio() {
+            if (!audioContext || !isRunning) return;
+            
+            const bufferLength = analyserA.frequencyBinCount;
+            const dataArrayA = new Uint8Array(bufferLength);
+            const dataArrayB = new Uint8Array(bufferLength);
+            
+            analyserA.getByteTimeDomainData(dataArrayA);
+            analyserB.getByteTimeDomainData(dataArrayB);
+            
+            // Calculate amplitudes
+            let maxA = 0, maxB = 0;
+            for (let i = 0; i < bufferLength; i++) {
+                const valA = Math.abs(dataArrayA[i] - 128) / 128;
+                const valB = Math.abs(dataArrayB[i] - 128) / 128;
+                if (valA > maxA) maxA = valA;
+                if (valB > maxB) maxB = valB;
+            }
+            
+            // Detect peaks
+            const currentTime = Date.now();
+            const resultA = detectorA.detectPeak(maxA, currentTime);
+            const resultB = detectorB.detectPeak(maxB, currentTime);
+            
+            // Update global data
+            window.audioAnalysisData.A = {
+                bpm: resultA.bpm,
+                peak: maxA,
+                isNewPeak: resultA.isNewPeak,
+                lastPeakTime: resultA.isNewPeak ? currentTime : window.audioAnalysisData.A.lastPeakTime
+            };
+            
+            window.audioAnalysisData.B = {
+                bpm: resultB.bpm,
+                peak: maxB,
+                isNewPeak: resultB.isNewPeak,
+                lastPeakTime: resultB.isNewPeak ? currentTime : window.audioAnalysisData.B.lastPeakTime
+            };
+            
+            // Trigger sounds on peaks
+            if (resultA.isNewPeak) {
+                triggerSoundA();
+                flashPeak('A');
+            }
+            
+            if (resultB.isNewPeak) {
+                triggerSoundB();
+                flashPeak('B');
+            }
+            
+            // Update cross-modulation
+            updateKnotModulation();
+            
+            // Update UI
+            updateUI();
+            
+            // Draw waveforms
+            drawWaveform('A', dataArrayA);
+            drawWaveform('B', dataArrayB);
+        }
+
+        function updateKnotModulation() {
+            if (!audioContext || !delayA || !delayB) return;
+            
+            const dataA = window.audioAnalysisData.A;
+            const dataB = window.audioAnalysisData.B;
+            
+            // B modulates A's delay
+            const modAmountA = dataB.peak * params.KNOT_DELAY_MOD_AMOUNT;
+            const newDelayA = params.KNOT_DELAY_BASE_TIME + modAmountA;
+            delayA.delayTime.linearRampToValueAtTime(newDelayA, audioContext.currentTime + 0.1);
+            
+            // A modulates B's delay
+            const modAmountB = dataA.peak * params.KNOT_DELAY_MOD_AMOUNT;
+            const newDelayB = params.KNOT_DELAY_BASE_TIME + modAmountB;
+            delayB.delayTime.linearRampToValueAtTime(newDelayB, audioContext.currentTime + 0.1);
+            
+            // Modulate drone filters based on BPM stability
+            if (dataA.bpm > 0) {
+                const filterFreqA = 200 + (dataA.bpm - 60) * 2;
+                droneFilterA.frequency.linearRampToValueAtTime(filterFreqA, audioContext.currentTime + 0.5);
+            }
+            
+            if (dataB.bpm > 0) {
+                const filterFreqB = 250 + (dataB.bpm - 60) * 2.5;
+                droneFilterB.frequency.linearRampToValueAtTime(filterFreqB, audioContext.currentTime + 0.5);
+            }
+        }
+
+        function updateUI() {
+            const dataA = window.audioAnalysisData.A;
+            const dataB = window.audioAnalysisData.B;
+            
+            // Update BPM displays
+            document.getElementById('bpmA').textContent = dataA.bpm > 0 ? dataA.bpm.toFixed(1) : '--';
+            document.getElementById('bpmB').textContent = dataB.bpm > 0 ? dataB.bpm.toFixed(1) : '--';
+            
+            // Update peak displays
+            document.getElementById('peakA').textContent = dataA.peak.toFixed(2);
+            document.getElementById('peakB').textContent = dataB.peak.toFixed(2);
+            
+            // Update KNOT visualization
+            updateKnotVisualization(dataA.peak, dataB.peak);
+        }
+
+        function updateKnotVisualization(peakA, peakB) {
+            const interaction = (peakA + peakB) / 2;
+            const lights = 5;
+            const activeLight = Math.floor(interaction * lights);
+            
+            for (let i = 1; i <= lights; i++) {
+                const element = document.getElementById(`knot${i}`);
+                if (i <= activeLight) {
+                    element.classList.add('active');
+                } else {
+                    element.classList.remove('active');
+                }
+            }
+            
+            // Update description
+            const desc = document.getElementById('knotDescription');
+            if (interaction < 0.2) {
+                desc.textContent = 'Minimal interaction - separate worlds';
+            } else if (interaction < 0.4) {
+                desc.textContent = 'Gentle influence emerging';
+            } else if (interaction < 0.6) {
+                desc.textContent = 'Active dialogue in progress';
+            } else if (interaction < 0.8) {
+                desc.textContent = 'Strong interconnection forming';
+            } else {
+                desc.textContent = 'Intense entanglement - complex KNOT';
+            }
+        }
+
+        function flashPeak(umwelt) {
+            const flash = document.getElementById(`peakFlash${umwelt}`);
+            flash.classList.add('active');
+            setTimeout(() => flash.classList.remove('active'), 300);
+        }
+
+        function drawWaveform(umwelt, dataArray) {
+            const canvas = document.getElementById(`waveform${umwelt}`);
+            const ctx = canvas.getContext('2d');
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            ctx.fillStyle = '#0a0a0a';
+            ctx.fillRect(0, 0, width, height);
+            
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = umwelt === 'A' ? '#667eea' : '#764ba2';
+            ctx.beginPath();
+            
+            const sliceWidth = width / dataArray.length;
+            let x = 0;
+            
+            for (let i = 0; i < dataArray.length; i++) {
+                const v = dataArray[i] / 128.0;
+                const y = v * height / 2;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+                
+                x += sliceWidth;
+            }
+            
+            ctx.stroke();
+        }
+
+        function animate() {
+            if (!isRunning) return;
+            
+            analyzeAudio();
+            requestAnimationFrame(animate);
+        }
+
+        function stopAudio() {
+            isRunning = false;
+            
+            // Stop microphone stream
+            if (micStream) {
+                micStream.getTracks().forEach(track => track.stop());
+                micStream = null;
+            }
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            // Reset detectors
+            detectorA.reset();
+            detectorB.reset();
+            
+            // Reset UI
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('testA').disabled = true;
+            document.getElementById('testB').disabled = true;
+            
+            updateStatus('Audio system stopped', 'success');
+        }
+
+        function updateStatus(message, type = '') {
+            const statusEl = document.getElementById('statusMessage');
+            statusEl.textContent = message;
+            statusEl.className = 'status-message ' + type;
+            
+            if (type) {
+                setTimeout(() => {
+                    statusEl.className = 'status-message';
+                    statusEl.textContent = '';
+                }, 3000);
+            }
+        }
+
+        // Simulate heartbeat peaks for testing
+        function simulatePeakA() {
+            if (!sourceA || !isTestMode) return;
+            sourceA.gain.setValueAtTime(1, audioContext.currentTime);
+            sourceA.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1);
+        }
+
+        function simulatePeakB() {
+            if (!sourceB || !isTestMode) return;
+            sourceB.gain.setValueAtTime(1, audioContext.currentTime);
+            sourceB.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.1);
+        }
+
+        // Event listeners
+        document.getElementById('startBtn').addEventListener('click', initAudio);
+        document.getElementById('stopBtn').addEventListener('click', stopAudio);
+        document.getElementById('testA').addEventListener('click', simulatePeakA);
+        document.getElementById('testB').addEventListener('click', simulatePeakB);
+
+        // Parameter controls
+        document.getElementById('lowpassFreq').addEventListener('input', (e) => {
+            params.INPUT_LOWPASS_FREQ = parseInt(e.target.value);
+            document.getElementById('lowpassFreqValue').textContent = e.target.value + ' Hz';
+            if (filterA) filterA.frequency.value = params.INPUT_LOWPASS_FREQ;
+            if (filterB) filterB.frequency.value = params.INPUT_LOWPASS_FREQ;
+        });
+
+        document.getElementById('peakThreshold').addEventListener('input', (e) => {
+            params.PEAK_THRESHOLD = parseFloat(e.target.value);
+            document.getElementById('peakThresholdValue').textContent = e.target.value;
+            detectorA.threshold = params.PEAK_THRESHOLD;
+            detectorB.threshold = params.PEAK_THRESHOLD;
+        });
+
+        document.getElementById('triggerAFreq').addEventListener('input', (e) => {
+            params.TRIGGER_A_FREQ = parseInt(e.target.value);
+            document.getElementById('triggerAFreqValue').textContent = e.target.value + ' Hz';
+        });
+
+        document.getElementById('droneAFreq').addEventListener('input', (e) => {
+            params.DRONE_A_BASE_FREQ = parseInt(e.target.value);
+            document.getElementById('droneAFreqValue').textContent = e.target.value + ' Hz';
+            if (droneOscA) droneOscA.frequency.value = params.DRONE_A_BASE_FREQ;
+        });
+
+        document.getElementById('droneBFreq').addEventListener('input', (e) => {
+            params.DRONE_B_BASE_FREQ = parseInt(e.target.value);
+            document.getElementById('droneBFreqValue').textContent = e.target.value + ' Hz';
+            if (droneOscB) droneOscB.frequency.value = params.DRONE_B_BASE_FREQ;
+        });
+
+        document.getElementById('delayBase').addEventListener('input', (e) => {
+            params.KNOT_DELAY_BASE_TIME = parseFloat(e.target.value);
+            document.getElementById('delayBaseValue').textContent = e.target.value + ' s';
+        });
+
+        document.getElementById('modAmount').addEventListener('input', (e) => {
+            params.KNOT_DELAY_MOD_AMOUNT = parseFloat(e.target.value);
+            document.getElementById('modAmountValue').textContent = e.target.value + ' s';
+        });
+
+        document.getElementById('feedback').addEventListener('input', (e) => {
+            params.KNOT_DELAY_FEEDBACK = parseFloat(e.target.value);
+            document.getElementById('feedbackValue').textContent = e.target.value;
+            if (feedbackGainA) feedbackGainA.gain.value = params.KNOT_DELAY_FEEDBACK;
+            if (feedbackGainB) feedbackGainB.gain.value = params.KNOT_DELAY_FEEDBACK;
+        });
+
+        document.getElementById('preKnotGain').addEventListener('input', (e) => {
+            params.PRE_KNOT_GAIN = parseFloat(e.target.value);
+            document.getElementById('preKnotGainValue').textContent = e.target.value;
+            if (masterGain) masterGain.gain.value = params.PRE_KNOT_GAIN;
+        });
+
+        document.getElementById('knotFxGain').addEventListener('input', (e) => {
+            params.KNOT_FX_GAIN = parseFloat(e.target.value);
+            document.getElementById('knotFxGainValue').textContent = e.target.value;
+            if (fxGain) fxGain.gain.value = params.KNOT_FX_GAIN;
+        });
+
+        // Initialize canvas sizes
+        function resizeCanvases() {
+            const canvases = ['waveformA', 'waveformB'];
+            canvases.forEach(id => {
+                const canvas = document.getElementById(id);
+                const rect = canvas.getBoundingClientRect();
+                canvas.width = rect.width;
+                canvas.height = rect.height;
+            });
+        }
+
+        window.addEventListener('resize', resizeCanvases);
+        resizeCanvases();
+
+        // Display initial status
+        updateStatus('Click "Start Audio" to begin the experience');
+    </script>
+</body>
+</html>
