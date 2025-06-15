@@ -142,6 +142,27 @@
             border: none;
             border-radius: 5px;
         }
+        .speaker-selectors {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+
+        .speaker-selectors select {
+            padding: 8px 12px;
+            background: #333;
+            color: #fff;
+            border: none;
+            border-radius: 5px;
+        }
+        .speaker-selectors label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
 
         button {
             background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
@@ -325,6 +346,32 @@
                 <select id="micSelectB"></select>
             </label>
         </div>
+        <div class="speaker-selectors">
+            <label>Speaker 1:
+                <select class="speakerSelect" id="speakerSelect1"></select>
+                <input type="checkbox" class="vibrationToggle" data-index="0">Vibration
+            </label>
+            <label>Speaker 2:
+                <select class="speakerSelect" id="speakerSelect2"></select>
+                <input type="checkbox" class="vibrationToggle" data-index="1">Vibration
+            </label>
+            <label>Speaker 3:
+                <select class="speakerSelect" id="speakerSelect3"></select>
+                <input type="checkbox" class="vibrationToggle" data-index="2">Vibration
+            </label>
+            <label>Speaker 4:
+                <select class="speakerSelect" id="speakerSelect4"></select>
+                <input type="checkbox" class="vibrationToggle" data-index="3">Vibration
+            </label>
+            <label>Speaker 5:
+                <select class="speakerSelect" id="speakerSelect5"></select>
+                <input type="checkbox" class="vibrationToggle" data-index="4">Vibration
+            </label>
+            <label>Speaker 6:
+                <select class="speakerSelect" id="speakerSelect6"></select>
+                <input type="checkbox" class="vibrationToggle" data-index="5">Vibration
+            </label>
+        </div>
 
         <div id="statusMessage" class="status-message"></div>
 
@@ -498,6 +545,11 @@
         let delayA, delayB, delayGainA, delayGainB;
         let feedbackGainA, feedbackGainB;
         let masterGain, fxGain;
+        let selectedSpeakerIds = Array(6).fill("");
+        let vibrationFlags = Array(6).fill(false);
+        let outputNodes = [];
+        let outputAudios = [];
+
 
         // Test mode flag
         let isTestMode = false;
@@ -519,23 +571,29 @@
             KNOT_FX_GAIN: 0.3
         };
 
+
         async function populateDeviceSelectors() {
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const audioInputs = devices.filter(d => d.kind === 'audioinput');
+                const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
 
                 const selectA = document.getElementById('micSelectA');
                 const selectB = document.getElementById('micSelectB');
+                const speakerSelects = document.querySelectorAll('.speakerSelect');
+                const vibrationToggles = document.querySelectorAll('.vibrationToggle');
+
                 selectA.innerHTML = '';
                 selectB.innerHTML = '';
+                speakerSelects.forEach(s => s.innerHTML = '');
 
                 audioInputs.forEach((device, index) => {
-                    const optionA = document.createElement('option');
-                    optionA.value = device.deviceId;
-                    optionA.textContent = device.label || `Microphone ${index + 1}`;
-                    selectA.appendChild(optionA);
+                    const option = document.createElement('option');
+                    option.value = device.deviceId;
+                    option.textContent = device.label || `Microphone ${index + 1}`;
+                    selectA.appendChild(option);
 
-                    const optionB = optionA.cloneNode(true);
+                    const optionB = option.cloneNode(true);
                     selectB.appendChild(optionB);
                 });
 
@@ -544,6 +602,32 @@
                     selectedDeviceIdB = audioInputs[1] ? selectB.options[1].value : selectA.value;
                     selectB.value = selectedDeviceIdB;
                 }
+
+                speakerSelects.forEach((select, idx) => {
+                    const defOpt = document.createElement('option');
+                    defOpt.value = '';
+                    defOpt.textContent = 'Default';
+                    select.appendChild(defOpt);
+                    audioOutputs.forEach((device, i) => {
+                        const opt = document.createElement('option');
+                        opt.value = device.deviceId;
+                        opt.textContent = device.label || `Speaker ${i + 1}`;
+                        select.appendChild(opt);
+                    });
+                    select.value = selectedSpeakerIds[idx] || '';
+                    select.addEventListener('change', e => {
+                        selectedSpeakerIds[idx] = e.target.value;
+                        if (audioContext) updateSpeakerOutputs();
+                    });
+                });
+
+                vibrationToggles.forEach((toggle, idx) => {
+                    toggle.checked = vibrationFlags[idx];
+                    toggle.addEventListener('change', e => {
+                        vibrationFlags[idx] = e.target.checked;
+                        if (audioContext) updateSpeakerOutputs();
+                    });
+                });
 
                 selectA.addEventListener('change', e => {
                     selectedDeviceIdA = e.target.value;
@@ -555,8 +639,59 @@
                 console.error('Failed to enumerate devices', err);
             }
         }
-
         // Heartbeat detector class
+        function updateSpeakerOutputs() {
+            if (!audioContext || !masterGain || !fxGain) return;
+
+            try {
+                masterGain.disconnect();
+                fxGain.disconnect();
+            } catch (e) {}
+
+            outputNodes.forEach(node => {
+                try {
+                    masterGain.disconnect(node);
+                    fxGain.disconnect(node);
+                    node.disconnect();
+                } catch (e) {}
+            });
+            outputNodes = [];
+            outputAudios.forEach(el => el.remove());
+            outputAudios = [];
+
+            const ids = selectedSpeakerIds.filter(id => id);
+            if (ids.length === 0) {
+                masterGain.connect(audioContext.destination);
+                fxGain.connect(audioContext.destination);
+                return;
+            }
+
+            selectedSpeakerIds.forEach((id, idx) => {
+                if (!id) return;
+                const dest = audioContext.createMediaStreamDestination();
+                let connectNode = dest;
+                if (vibrationFlags[idx]) {
+                    const filter = audioContext.createBiquadFilter();
+                    filter.type = 'lowpass';
+                    filter.frequency.value = 150;
+                    masterGain.connect(filter);
+                    fxGain.connect(filter);
+                    filter.connect(dest);
+                    connectNode = filter;
+                } else {
+                    masterGain.connect(dest);
+                    fxGain.connect(dest);
+                }
+                const audioEl = new Audio();
+                audioEl.srcObject = dest.stream;
+                if (audioEl.setSinkId) {
+                    audioEl.setSinkId(id).catch(err => console.error('setSinkId error', err));
+                }
+                audioEl.play().catch(err => console.error('audio play error', err));
+                outputNodes.push(connectNode);
+                outputAudios.push(audioEl);
+            });
+        }
         class HeartbeatDetector {
             constructor(threshold = 0.7, cooldownMs = 300) {
                 this.threshold = threshold;
@@ -625,6 +760,7 @@
                 
                 // Initialize KNOT effects
                 initKnotEffects();
+                updateSpeakerOutputs();
                 
                 // Start animation loop
                 animate();
@@ -1066,6 +1202,17 @@
                 audioContext.close();
                 audioContext = null;
             }
+            outputNodes.forEach(node => {
+                try {
+                    masterGain.disconnect(node);
+                    fxGain.disconnect(node);
+                    node.disconnect();
+                } catch (e) {}
+            });
+            outputNodes = [];
+            outputAudios.forEach(el => el.remove());
+            outputAudios = [];
+
             
             // Reset detectors
             detectorA.reset();
