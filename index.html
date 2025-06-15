@@ -816,12 +816,14 @@
 
         // Audio nodes for Umwelt A
         let sourceA, analyserA, filterA, gainA, pannerA;
+        let bpmAnalyserA, bpmHighA, bpmLowA;
         let droneOscA, droneFilterA, droneGainA;
         let triggerOscA, triggerGainA;
         let micFilterA, micGainA;
 
         // Audio nodes for Umwelt B
         let sourceB, analyserB, filterB, gainB, pannerB;
+        let bpmAnalyserB, bpmHighB, bpmLowB;
         let droneOscB, droneFilterB, droneGainB;
         let triggerOscB, triggerGainB;
         let micFilterB, micGainB;
@@ -836,6 +838,8 @@
         let vibrationFlags = Array(6).fill(false);
         let outputNodes = [];
         let outputAudios = [];
+
+        let bpmEstimatorA, bpmEstimatorB;
 
         // Remote BPM settings
         let useRemoteBpmB = false;
@@ -1020,14 +1024,145 @@
                 outputAudios.push(audioEl);
             });
         }
-        class HeartbeatDetector {
+class HeartbeatDetector {
             constructor(threshold = 0.7, cooldownMs = 300) {
                 this.threshold = threshold;
                 this.cooldownTime = cooldownMs;
                 this.lastPeakTime = 0;
                 this.peakHistory = [];
-                this.bpm = 0;
+}
+
+        class BpmEstimator {
+            constructor(sampleRate) {
+                this.sampleRate = sampleRate;
+                this.windowSize = Math.round(3 * sampleRate);
+                this.buffer = new Float32Array(this.windowSize);
+                this.index = 0;
+                this.filled = false;
+                this.bpmHistory = [];
+
+                this.hilbertCoeffs = this._createHilbertCoeffs(63);
+                this.lowpassCoeffs = this._butterworthLowpass(50);
             }
+
+            _createHilbertCoeffs(N) {
+                const coeffs = new Float32Array(N);
+                const M = (N - 1) / 2;
+                for (let n = 0; n < N; n++) {
+                    const k = n - M;
+                    let c = 0;
+                    if (k !== 0 && k % 2 !== 0) {
+                        c = 2 / (Math.PI * k);
+                    }
+                    const w = 0.54 - 0.46 * Math.cos(2 * Math.PI * n / (N - 1));
+                    coeffs[n] = c * w;
+                }
+                return coeffs;
+            }
+
+            _butterworthLowpass(cutoff) {
+                const sr = this.sampleRate;
+                const w = Math.tan(Math.PI * cutoff / sr);
+                const sqrt2 = Math.SQRT2;
+                const b0 = w * w;
+                const b1 = 2 * w * w;
+                const b2 = w * w;
+                const a0 = 1 + sqrt2 * w + w * w;
+                const a1 = 2 * (w * w - 1);
+                const a2 = 1 - sqrt2 * w + w * w;
+                return {
+                    b: [b0 / a0, b1 / a0, b2 / a0],
+                    a: [1, a1 / a0, a2 / a0]
+                };
+            }
+
+            _iirFilter(input, coeffs) {
+                const out = new Float32Array(input.length);
+                const b = coeffs.b;
+                const a = coeffs.a;
+                let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+                for (let i = 0; i < input.length; i++) {
+                    const x0 = input[i];
+                    const y0 = b[0] * x0 + b[1] * x1 + b[2] * x2 - a[1] * y1 - a[2] * y2;
+                    out[i] = y0;
+                    x2 = x1; x1 = x0;
+                    y2 = y1; y1 = y0;
+                }
+                return out;
+            }
+
+            _convolve(input, coeffs) {
+                const out = new Float32Array(input.length);
+                for (let i = 0; i < input.length; i++) {
+                    let sum = 0;
+                    for (let k = 0; k < coeffs.length; k++) {
+                        const idx = i - k;
+                        if (idx >= 0) sum += coeffs[k] * input[idx];
+                    }
+                    out[i] = sum;
+                }
+                return out;
+            }
+
+            addSamples(samples) {
+                for (let i = 0; i < samples.length; i++) {
+                    this.buffer[this.index] = samples[i];
+                    this.index = (this.index + 1) % this.windowSize;
+                    if (this.index === 0) this.filled = true;
+                }
+            }
+
+            compute() {
+                if (!this.filled) return { bpm: null, confidence: 0 };
+
+                const buf = new Float32Array(this.windowSize);
+                for (let i = 0; i < this.windowSize; i++) {
+                    buf[i] = this.buffer[(this.index + i) % this.windowSize];
+                }
+
+                let sum = 0;
+                for (let i = 0; i < buf.length; i++) sum += buf[i];
+                const mean = sum / buf.length;
+                for (let i = 0; i < buf.length; i++) buf[i] -= mean;
+
+                const imag = this._convolve(buf, this.hilbertCoeffs);
+                const env = new Float32Array(buf.length);
+                for (let i = 0; i < buf.length; i++) {
+                    env[i] = Math.hypot(buf[i], imag[i]);
+                }
+
+                const smooth = this._iirFilter(env, this.lowpassCoeffs);
+
+                const minLag = Math.round(0.4 * this.sampleRate);
+                const maxLag = Math.round(1.2 * this.sampleRate);
+                let r0 = 0;
+                for (let i = 0; i < smooth.length; i++) r0 += smooth[i] * smooth[i];
+
+                let bestVal = -Infinity;
+                let bestLag = minLag;
+                for (let lag = minLag; lag <= maxLag; lag++) {
+                    let sum = 0;
+                    for (let i = 0; i < smooth.length - lag; i++) {
+                        sum += smooth[i] * smooth[i + lag];
+                    }
+                    if (sum > bestVal) { bestVal = sum; bestLag = lag; }
+                }
+
+                const confidence = r0 ? bestVal / r0 : 0;
+                let bpm = 60 * this.sampleRate / bestLag;
+                if (confidence < 0.3 || !isFinite(bpm)) bpm = null;
+
+                if (bpm) {
+                    this.bpmHistory.push(bpm);
+                    if (this.bpmHistory.length > params.BPM_MOVING_AVG_SIZE) {
+                        this.bpmHistory.shift();
+                    }
+                    bpm = this.bpmHistory.reduce((a, b) => a + b, 0) / this.bpmHistory.length;
+                }
+
+                return { bpm, confidence };
+            }
+        }
 
             detectPeak(amplitude, currentTime) {
                 const timeSinceLastPeak = currentTime - this.lastPeakTime;
@@ -1036,27 +1171,15 @@
                     this.lastPeakTime = currentTime;
                     this.peakHistory.push(currentTime);
                     
-                    // Calculate BPM from recent peaks
-                    if (this.peakHistory.length > params.BPM_MOVING_AVG_SIZE) {
-                        this.peakHistory.shift();
-                        const intervals = [];
-                        for (let i = 1; i < this.peakHistory.length; i++) {
-                            intervals.push(this.peakHistory[i] - this.peakHistory[i-1]);
-                        }
-                        const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
-                        this.bpm = 60000 / avgInterval;
-                    }
-                    
-                    return { isNewPeak: true, bpm: this.bpm, peak: amplitude };
+                    return { isNewPeak: true, peak: amplitude };
                 }
-                
-                return { isNewPeak: false, bpm: this.bpm, peak: 0 };
+
+                return { isNewPeak: false, peak: 0 };
             }
 
             reset() {
                 this.lastPeakTime = 0;
                 this.peakHistory = [];
-                this.bpm = 0;
             }
         }
 
@@ -1076,6 +1199,9 @@
                 
                 fxGain = audioContext.createGain();
                 fxGain.gain.value = params.KNOT_FX_GAIN;
+
+                bpmEstimatorA = new BpmEstimator(audioContext.sampleRate);
+                bpmEstimatorB = new BpmEstimator(audioContext.sampleRate);
                 
                 masterGain.connect(audioContext.destination);
                 fxGain.connect(audioContext.destination);
@@ -1110,6 +1236,15 @@
             // Create analyser
             analyserA = audioContext.createAnalyser();
             analyserA.fftSize = 2048;
+
+            bpmHighA = audioContext.createBiquadFilter();
+            bpmHighA.type = 'highpass';
+            bpmHighA.frequency.value = 20;
+            bpmLowA = audioContext.createBiquadFilter();
+            bpmLowA.type = 'lowpass';
+            bpmLowA.frequency.value = 150;
+            bpmAnalyserA = audioContext.createAnalyser();
+            bpmAnalyserA.fftSize = 2048;
             
             // Create filter
             filterA = audioContext.createBiquadFilter();
@@ -1165,6 +1300,7 @@
                 sourceA = audioContext.createMediaStreamSource(stream);
                 sourceA.connect(filterA);
 
+
                 micFilterA = audioContext.createBiquadFilter();
                 micFilterA.type = 'lowpass';
                 micFilterA.frequency.value = params.MIC_FILTER_FREQ;
@@ -1187,6 +1323,7 @@
                 testGain.gain.value = 0;
                 testOsc.connect(testGain);
                 testGain.connect(filterA);
+                testGain.connect(bpmHighA);
                 testOsc.start();
                 sourceA = testGain;
             }
@@ -1196,6 +1333,15 @@
             // Create analyser
             analyserB = audioContext.createAnalyser();
             analyserB.fftSize = 2048;
+
+            bpmHighB = audioContext.createBiquadFilter();
+            bpmHighB.type = 'highpass';
+            bpmHighB.frequency.value = 20;
+            bpmLowB = audioContext.createBiquadFilter();
+            bpmLowB.type = 'lowpass';
+            bpmLowB.frequency.value = 150;
+            bpmAnalyserB = audioContext.createAnalyser();
+            bpmAnalyserB.fftSize = 2048;
             
             // Create filter
             filterB = audioContext.createBiquadFilter();
@@ -1270,6 +1416,9 @@
                     micGainB.connect(pannerB);
 
                     channelSplitter.connect(filterB, 1);
+                    channelSplitter.connect(bpmHighB, 1);
+                    bpmHighB.connect(bpmLowB);
+                    bpmLowB.connect(bpmAnalyserB);
                     sourceB = channelSplitter;
                 } else {
                     stream = await navigator.mediaDevices.getUserMedia({
@@ -1283,6 +1432,10 @@
                     micStreamB = stream;
                     sourceB = audioContext.createMediaStreamSource(stream);
                     sourceB.connect(filterB);
+
+                    sourceB.connect(bpmHighB);
+                    bpmHighB.connect(bpmLowB);
+                    bpmLowB.connect(bpmAnalyserB);
 
                     micFilterB = audioContext.createBiquadFilter();
                     micFilterB.type = 'lowpass';
@@ -1300,6 +1453,9 @@
                     testGain.gain.value = 0;
                     testOsc.connect(testGain);
                     testGain.connect(filterB);
+                    testGain.connect(bpmHighB);
+                    bpmHighB.connect(bpmLowB);
+                    bpmLowB.connect(bpmAnalyserB);
                     testOsc.start();
                     sourceB = testGain;
                 }
@@ -1387,10 +1543,14 @@
             const bufferLength = analyserA.frequencyBinCount;
             const dataArrayA = new Uint8Array(bufferLength);
             const dataArrayB = new Uint8Array(bufferLength);
-            
+            const bpmArrayA = new Float32Array(bufferLength);
+            const bpmArrayB = new Float32Array(bufferLength);
+
             analyserA.getByteTimeDomainData(dataArrayA);
+            bpmAnalyserA.getFloatTimeDomainData(bpmArrayA);
             if (!useRemoteBpmB) {
                 analyserB.getByteTimeDomainData(dataArrayB);
+                bpmAnalyserB.getFloatTimeDomainData(bpmArrayB);
             } else {
                 dataArrayB.fill(128);
             }
@@ -1409,19 +1569,28 @@
             const currentTime = Date.now();
             const resultA = detectorA.detectPeak(maxA, currentTime);
             const resultB = useRemoteBpmB
-                ? { isNewPeak: false, bpm: remoteBpm, peak: 0 }
+                ? { isNewPeak: false, peak: 0 }
                 : detectorB.detectPeak(maxB, currentTime);
+
+            bpmEstimatorA.addSamples(bpmArrayA);
+            const bpmResA = bpmEstimatorA.compute();
+
+            let bpmResB = { bpm: remoteBpm, confidence: 1 };
+            if (!useRemoteBpmB) {
+                bpmEstimatorB.addSamples(bpmArrayB);
+                bpmResB = bpmEstimatorB.compute();
+            }
             
             // Update global data
             window.audioAnalysisData.A = {
-                bpm: resultA.bpm,
+                bpm: bpmResA.bpm,
                 peak: maxA,
                 isNewPeak: resultA.isNewPeak,
                 lastPeakTime: resultA.isNewPeak ? currentTime : window.audioAnalysisData.A.lastPeakTime
             };
-            
+
             window.audioAnalysisData.B = {
-                bpm: resultB.bpm,
+                bpm: bpmResB.bpm,
                 peak: maxB,
                 isNewPeak: resultB.isNewPeak,
                 lastPeakTime: resultB.isNewPeak ? currentTime : window.audioAnalysisData.B.lastPeakTime
