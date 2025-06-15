@@ -324,6 +324,13 @@
             background: #2a4a2a;
             color: #51cf66;
         }
+
+        /* Canvas for WebGL Visualization */
+        #glsl-canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
     </style>
 </head>
 <body>
@@ -507,6 +514,250 @@
             </div>
         </div>
     </div>
+
+    <!-- WebGL Visualization -->
+    <canvas id="glsl-canvas"></canvas>
+
+    <script id="vertex-shader" type="x-shader/x-vertex">
+        attribute vec2 a_position;
+        void main() {
+            gl_Position = vec4(a_position, 0.0, 1.0);
+        }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+        /*
+         * Title: "Aural Viscera" (Final Ver.)
+         * Author: Gemini
+         * Features: Seamless blending and a synchronization algorithm.
+         */
+        precision highp float;
+
+        uniform float time;
+        uniform vec2 resolution;
+        uniform float heart_a_peak;
+        uniform float heart_a_age;
+        uniform float heart_b_peak;
+        uniform float heart_b_age;
+
+        // --- ユーティリティ関数 ---
+        mat2 rotate(float a) {
+            float s = sin(a); float c = cos(a);
+            return mat2(c, -s, s, c);
+        }
+
+        float rand(vec2 n) {
+            return fract(sin(dot(n, vec2(12.9898, 4.1414))) * 43758.5453);
+        }
+
+        float snoise(vec2 p) {
+            vec2 ip = floor(p);
+            vec2 fp = fract(p);
+            fp = fp * fp * (3.0 - 2.0 * fp);
+            float a = rand(ip);
+            float b = rand(ip + vec2(1.0, 0.0));
+            float c = rand(ip + vec2(0.0, 1.0));
+            float d = rand(ip + vec2(1.0, 1.0));
+            return mix(mix(a, b, fp.x), mix(c, d, fp.x), fp.y);
+        }
+
+        float fbm(vec2 p) {
+            float v = 0.0; float a = 0.5;
+            mat2 rot = rotate(time * 0.05);
+            for (int i = 0; i < 6; i++) {
+                v += a * snoise(p);
+                p = rot * p * 2.1;
+                a *= 0.5;
+            }
+            return v;
+        }
+
+        // --- メイン処理 ---
+        void main() {
+            vec2 uv = (gl_FragCoord.xy * 2.0 - resolution) / min(resolution.x, resolution.y);
+
+            float dist = length(uv);
+            float orb_mask = smoothstep(1.0, 0.95, dist);
+            if (orb_mask < 0.01) discard;
+
+            float mix_factor = smoothstep(-0.4, 0.4, uv.x);
+
+            // Player A
+            vec3 color_a = vec3(0.1, 0.7, 1.0);
+            float pulse_wave_a = sin(dist * 25.0 - heart_a_age * 8.0) * 0.05 * heart_a_peak;
+            float brightness_a = 0.3 + heart_a_peak * 0.7;
+
+            // Player B
+            vec3 color_b = vec3(1.0, 0.1, 0.5);
+            float pulse_wave_b = sin(dist * 25.0 - heart_b_age * 8.0) * 0.05 * heart_b_peak;
+            float brightness_b = 0.3 + heart_b_peak * 0.7;
+
+            // 融合
+            vec3 mixed_base_color = mix(color_a, color_b, mix_factor);
+            float mixed_pulse_wave = mix(pulse_wave_a, pulse_wave_b, mix_factor);
+            float mixed_brightness = mix(brightness_a, brightness_b, mix_factor);
+
+            // 描画
+            vec2 noisy_uv = uv + uv * mixed_pulse_wave;
+            float noisy_pattern = fbm(noisy_uv * 2.5);
+            vec3 hemisphere_color = mixed_base_color * (0.6 + noisy_pattern * 0.4) * mixed_brightness;
+
+            // 大気と光の散乱
+            float cloud_fbm = fbm(uv * 1.5 + time * 0.02);
+            float atmosphere_mask = cloud_fbm * 0.4 + 0.6;
+            float scattering_fbm = fbm(uv * 3.0 - time * 0.03);
+            float radial_glow = pow(1.0 - dist, 4.0);
+            float light_scattering = radial_glow * scattering_fbm * 0.4;
+            hemisphere_color += mixed_base_color * light_scattering * (0.5 + mixed_brightness);
+
+            vec3 final_color = hemisphere_color * atmosphere_mask;
+
+            // 共鳴
+            float resonance_strength = heart_a_peak * heart_b_peak * 1.5;
+            if (resonance_strength > 0.0) {
+                float rift_fbm = fbm(uv * vec2(0.4, 3.0) + vec2(0.0, time * -0.4));
+                float rift_mask = smoothstep(0.15, 0.0, abs(uv.x)) * pow(rift_fbm, 2.0);
+                vec3 resonance_color = vec3(1.0, 1.0, 0.85) * rift_mask * resonance_strength;
+                final_color += resonance_color;
+            }
+
+            // 星
+            float star_field = pow(fbm(uv * 4.0), 25.0);
+            final_color += vec3(star_field) * 0.3;
+
+            gl_FragColor = vec4(final_color * orb_mask, 1.0);
+        }
+    </script>
+
+    <script>
+        // --- WebGL初期化と描画ループのJavaScript ---
+        const canvas = document.getElementById('glsl-canvas');
+        const gl = canvas.getContext('webgl', { antialias: false });
+
+        if (!gl) { alert('WebGL is not supported by your browser.'); }
+
+        const vertexShaderSource = document.getElementById('vertex-shader').textContent;
+        const fragmentShaderSource = document.getElementById('fragment-shader').textContent;
+
+        function createShader(gl, type, source) {
+            const shader = gl.createShader(type); gl.shaderSource(shader, source); gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) { console.error('Shader compile error: ' + gl.getShaderInfoLog(shader)); gl.deleteShader(shader); return null; }
+            return shader;
+        }
+
+        const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+        const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+        const program = gl.createProgram();
+        gl.attachShader(program, vertexShader); gl.attachShader(program, fragmentShader); gl.linkProgram(program);
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.error('Program link error: ' + gl.getProgramInfoLog(program)); }
+
+        const uniformLocations = {
+            time: gl.getUniformLocation(program, 'time'),
+            resolution: gl.getUniformLocation(program, 'resolution'),
+            heart_a_peak: gl.getUniformLocation(program, 'heart_a_peak'),
+            heart_a_age: gl.getUniformLocation(program, 'heart_a_age'),
+            heart_b_peak: gl.getUniformLocation(program, 'heart_b_peak'),
+            heart_b_age: gl.getUniformLocation(program, 'heart_b_age')
+        };
+        const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
+
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        const positions = [-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        // Heartbeat visuals for Umwelt A and B
+        const heart_a = { peak: 0, age: 0, bpm: 72 };
+        const heart_b = { peak: 0, age: 0, bpm: 78 };
+
+        let last_a_beat = 0;
+        let last_b_beat = 0;
+
+        let syncState = 'ASYNC';
+        let timeInSync = 0.0;
+        const SYNC_THRESHOLD_BPM = 2.0;
+        const SYNC_ACTIVATE_TIME = 3.0;
+        let shared_bpm = 75;
+        let last_shared_beat = 0;
+
+        let lastFrameTime = 0;
+        function render(time) {
+            const currentTime = time * 0.001;
+            const dt = currentTime - lastFrameTime;
+            lastFrameTime = currentTime;
+
+            // --- 心拍の状態を更新 (マイク入力反映) ---
+            const dataA = window.audioAnalysisData?.A || {};
+            const dataB = window.audioAnalysisData?.B || {};
+
+            if (dataA.bpm) heart_a.bpm = dataA.bpm;
+            if (dataB.bpm) heart_b.bpm = dataB.bpm;
+
+            const peakA = (dataA.lastPeakTime || 0) / 1000;
+            const peakB = (dataB.lastPeakTime || 0) / 1000;
+
+            if (peakA > last_a_beat) {
+                heart_a.peak = 1.0;
+                heart_a.age = 0.0;
+                last_a_beat = peakA;
+            }
+
+            if (peakB > last_b_beat) {
+                heart_b.peak = 1.0;
+                heart_b.age = 0.0;
+                last_b_beat = peakB;
+            }
+
+            const bpm_diff = Math.abs(heart_a.bpm - heart_b.bpm);
+            if (bpm_diff < SYNC_THRESHOLD_BPM) {
+                timeInSync += dt;
+            } else {
+                timeInSync = 0.0;
+                syncState = 'ASYNC';
+            }
+
+            if (timeInSync > SYNC_ACTIVATE_TIME) {
+                syncState = 'SYNCING';
+            }
+
+            if (syncState === 'SYNCING') {
+                shared_bpm = (heart_a.bpm + heart_b.bpm) / 2.0;
+                if (currentTime - last_shared_beat > 60.0 / shared_bpm) {
+                    heart_a.peak = 1.0; heart_b.peak = 1.0;
+                    heart_a.age = 0.0;  heart_b.age = 0.0;
+                    last_shared_beat = currentTime;
+                }
+            }
+
+            heart_a.age += dt;
+            heart_b.age += dt;
+            heart_a.peak = Math.max(0, heart_a.peak - dt * 1.5);
+            heart_b.peak = Math.max(0, heart_b.peak - dt * 1.5);
+
+            // WebGL描画
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+            gl.useProgram(program);
+
+            gl.enableVertexAttribArray(positionAttributeLocation);
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+            gl.uniform1f(uniformLocations.time, currentTime);
+            gl.uniform2f(uniformLocations.resolution, gl.canvas.width, gl.canvas.height);
+            gl.uniform1f(uniformLocations.heart_a_peak, heart_a.peak);
+            gl.uniform1f(uniformLocations.heart_a_age, heart_a.age);
+            gl.uniform1f(uniformLocations.heart_b_peak, heart_b.peak);
+            gl.uniform1f(uniformLocations.heart_b_age, heart_b.age);
+
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+            requestAnimationFrame(render);
+        }
+
+        requestAnimationFrame(render);
+    </script>
 
     <script>
         // Global audio analysis data for visual module integration
