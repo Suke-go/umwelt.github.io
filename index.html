@@ -540,6 +540,11 @@
                     <input type="range" id="knotFxGain" min="0" max="1" step="0.1" value="0.3">
                     <span class="slider-value" id="knotFxGainValue">0.3</span>
                 </div>
+                <div class="slider-container">
+                    <span class="slider-label">Mic/System Balance</span>
+                    <input type="range" id="micSystemBalance" min="0" max="1" step="0.1" value="0.5">
+                    <span class="slider-value" id="micSystemBalanceValue">0.5</span>
+                </div>
             </div>
         </div>
     </div>
@@ -819,12 +824,14 @@
         let droneOscA, droneFilterA, droneGainA;
         let triggerOscA, triggerGainA;
         let micFilterA, micGainA;
+        let micMixGainA, sysMixGainA;
 
         // Audio nodes for Umwelt B
         let sourceB, analyserB, filterB, gainB, pannerB;
         let droneOscB, droneFilterB, droneGainB;
         let triggerOscB, triggerGainB;
         let micFilterB, micGainB;
+        let micMixGainB, sysMixGainB;
 
         let channelSplitter;
 
@@ -886,7 +893,8 @@
             KNOT_DELAY_MOD_AMOUNT: 0.3,
             KNOT_DELAY_FEEDBACK: 0.4,
             PRE_KNOT_GAIN: 0.7,
-            KNOT_FX_GAIN: 0.3
+            KNOT_FX_GAIN: 0.3,
+            MIC_SYSTEM_BALANCE: 0.5
         };
 
 
@@ -1085,6 +1093,8 @@
                 
                 // Initialize Umwelt B
                 await initUmweltB();
+
+                updateMicSystemBalance();
                 
                 // Initialize KNOT effects
                 initKnotEffects();
@@ -1124,7 +1134,12 @@
             // Create panner
             pannerA = audioContext.createStereoPanner();
             pannerA.pan.value = params.PAN_A;
-            
+
+            micMixGainA = audioContext.createGain();
+            sysMixGainA = audioContext.createGain();
+            micMixGainA.gain.value = params.MIC_SYSTEM_BALANCE;
+            sysMixGainA.gain.value = 1 - params.MIC_SYSTEM_BALANCE;
+
             // Create drone oscillator
             droneOscA = audioContext.createOscillator();
             droneOscA.type = 'sawtooth';
@@ -1140,12 +1155,14 @@
             // Connect drone chain
             droneOscA.connect(droneFilterA);
             droneFilterA.connect(droneGainA);
-            droneGainA.connect(pannerA);
+            droneGainA.connect(sysMixGainA);
             
             // Connect main chain
             filterA.connect(analyserA);
             filterA.connect(gainA);
-            gainA.connect(pannerA);
+            gainA.connect(micMixGainA);
+            micMixGainA.connect(pannerA);
+            sysMixGainA.connect(pannerA);
             pannerA.connect(masterGain);
             
             // Start drone
@@ -1172,7 +1189,7 @@
                 micGainA.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
                 sourceA.connect(micFilterA);
                 micFilterA.connect(micGainA);
-                micGainA.connect(pannerA);
+                micGainA.connect(micMixGainA);
                 updateStatus('Microphone A connected', 'success');
                 isTestMode = false;
             } catch (error) {
@@ -1210,6 +1227,11 @@
             // Create panner
             pannerB = audioContext.createStereoPanner();
             pannerB.pan.value = params.PAN_B;
+
+            micMixGainB = audioContext.createGain();
+            sysMixGainB = audioContext.createGain();
+            micMixGainB.gain.value = params.MIC_SYSTEM_BALANCE;
+            sysMixGainB.gain.value = 1 - params.MIC_SYSTEM_BALANCE;
             
             // Create drone oscillator
             droneOscB = audioContext.createOscillator();
@@ -1226,12 +1248,14 @@
             // Connect drone chain
             droneOscB.connect(droneFilterB);
             droneFilterB.connect(droneGainB);
-            droneGainB.connect(pannerB);
+            droneGainB.connect(sysMixGainB);
             
             // Connect main chain
             filterB.connect(analyserB);
             filterB.connect(gainB);
-            gainB.connect(pannerB);
+            gainB.connect(micMixGainB);
+            micMixGainB.connect(pannerB);
+            sysMixGainB.connect(pannerB);
             pannerB.connect(masterGain);
             
             // Start drone
@@ -1267,7 +1291,7 @@
                     micGainB.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
                     channelSplitter.connect(micFilterB, 1);
                     micFilterB.connect(micGainB);
-                    micGainB.connect(pannerB);
+                    micGainB.connect(micMixGainB);
 
                     channelSplitter.connect(filterB, 1);
                     sourceB = channelSplitter;
@@ -1291,7 +1315,7 @@
                     micGainB.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
                     sourceB.connect(micFilterB);
                     micFilterB.connect(micGainB);
-                    micGainB.connect(pannerB);
+                    micGainB.connect(micMixGainB);
                 }
                 } catch (error) {
                     const testOsc = audioContext.createOscillator();
@@ -1355,7 +1379,7 @@
             gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.3);
             
             osc.connect(gain);
-            gain.connect(pannerA);
+            gain.connect(sysMixGainA);
             
             osc.start();
             osc.stop(audioContext.currentTime + 0.3);
@@ -1375,7 +1399,7 @@
             gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.4);
             
             osc.connect(gain);
-            gain.connect(pannerB);
+            gain.connect(sysMixGainB);
             
             osc.start();
             osc.stop(audioContext.currentTime + 0.4);
@@ -1475,6 +1499,15 @@
                 const filterFreqB = 250 + (dataB.bpm - 60) * 2.5;
                 droneFilterB.frequency.linearRampToValueAtTime(filterFreqB, audioContext.currentTime + 0.5);
             }
+        }
+
+        function updateMicSystemBalance() {
+            const micLevel = params.MIC_SYSTEM_BALANCE;
+            const sysLevel = 1 - micLevel;
+            if (micMixGainA) micMixGainA.gain.value = micLevel;
+            if (micMixGainB) micMixGainB.gain.value = micLevel;
+            if (sysMixGainA) sysMixGainA.gain.value = sysLevel;
+            if (sysMixGainB) sysMixGainB.gain.value = sysLevel;
         }
 
         function updateUI() {
@@ -1592,8 +1625,12 @@
                 channelSplitter = null;
                 micFilterA = null;
                 micGainA = null;
+                micMixGainA = null;
+                sysMixGainA = null;
                 micFilterB = null;
                 micGainB = null;
+                micMixGainB = null;
+                sysMixGainB = null;
             }
             outputNodes.forEach(node => {
                 try {
@@ -1746,6 +1783,12 @@
             params.KNOT_FX_GAIN = parseFloat(e.target.value);
             document.getElementById('knotFxGainValue').textContent = e.target.value;
             if (fxGain) fxGain.gain.value = params.KNOT_FX_GAIN;
+        });
+
+        document.getElementById('micSystemBalance').addEventListener('input', (e) => {
+            params.MIC_SYSTEM_BALANCE = parseFloat(e.target.value);
+            document.getElementById('micSystemBalanceValue').textContent = e.target.value;
+            updateMicSystemBalance();
         });
 
         // Initialize canvas sizes
