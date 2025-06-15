@@ -890,7 +890,9 @@
         };
 
 
-        async function populateDeviceSelectors() {
+        async function populateDeviceSelectors(preserveSelections = false) {
+            const prevA = selectedDeviceIdA;
+            const prevB = selectedDeviceIdB;
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const audioInputs = devices.filter(d => d.kind === 'audioinput');
@@ -916,9 +918,17 @@
                 });
 
                 if (audioInputs.length > 0) {
+                    if (preserveSelections && prevA && [...selectA.options].some(o => o.value === prevA)) {
+                        selectA.value = prevA;
+                    }
                     selectedDeviceIdA = selectA.value;
-                    selectedDeviceIdB = audioInputs[1] ? selectB.options[1].value : selectA.value;
-                    selectB.value = selectedDeviceIdB;
+
+                    if (preserveSelections && prevB && [...selectB.options].some(o => o.value === prevB)) {
+                        selectB.value = prevB;
+                    } else {
+                        selectB.value = audioInputs[1] ? selectB.options[1].value : selectA.value;
+                    }
+                    selectedDeviceIdB = selectB.value;
                 }
 
                 speakerSelects.forEach((select, idx) => {
@@ -1058,7 +1068,7 @@
             try {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-                await populateDeviceSelectors();
+                await populateDeviceSelectors(true);
                 
                 // Create master gain and fx gain
                 masterGain = audioContext.createGain();
