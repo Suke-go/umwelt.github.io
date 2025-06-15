@@ -459,6 +459,16 @@
                     <input type="range" id="peakThreshold" min="0.1" max="1" step="0.1" value="0.7">
                     <span class="slider-value" id="peakThresholdValue">0.7</span>
                 </div>
+                <div class="slider-container">
+                    <span class="slider-label">Mic Monitor Gain</span>
+                    <input type="range" id="micMonitorGain" min="0" max="40" step="1" value="28">
+                    <span class="slider-value" id="micMonitorGainValue">28 dB</span>
+                </div>
+                <div class="slider-container">
+                    <span class="slider-label">Mic Filter</span>
+                    <input type="range" id="micFilterFreq" min="50" max="500" value="100">
+                    <span class="slider-value" id="micFilterFreqValue">100 Hz</span>
+                </div>
             </div>
 
             <div class="parameter-group">
@@ -813,7 +823,9 @@
         let isTestMode = false;
 
         // Microphone monitoring
-        const MIC_MONITOR_GAIN = Math.pow(10, 28 / 20); // ~28 dB
+        function dBToAmp(db) {
+            return Math.pow(10, db / 20);
+        }
         let micMonitorEnabled = false;
 
         // Parameters
@@ -826,6 +838,8 @@
             TRIGGER_A_FREQ: 660,
             DRONE_A_BASE_FREQ: 110,
             DRONE_B_BASE_FREQ: 130,
+            MIC_MONITOR_GAIN_DB: 28,
+            MIC_FILTER_FREQ: 100,
             KNOT_DELAY_BASE_TIME: 0.4,
             KNOT_DELAY_MOD_AMOUNT: 0.3,
             KNOT_DELAY_FEEDBACK: 0.4,
@@ -1101,9 +1115,9 @@
 
                 micFilterA = audioContext.createBiquadFilter();
                 micFilterA.type = 'lowpass';
-                micFilterA.frequency.value = 100;
+                micFilterA.frequency.value = params.MIC_FILTER_FREQ;
                 micGainA = audioContext.createGain();
-                micGainA.gain.value = micMonitorEnabled ? MIC_MONITOR_GAIN : 0;
+                micGainA.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
                 sourceA.connect(micFilterA);
                 micFilterA.connect(micGainA);
                 micGainA.connect(pannerA);
@@ -1187,9 +1201,9 @@
 
                     micFilterB = audioContext.createBiquadFilter();
                     micFilterB.type = 'lowpass';
-                    micFilterB.frequency.value = 100;
+                    micFilterB.frequency.value = params.MIC_FILTER_FREQ;
                     micGainB = audioContext.createGain();
-                    micGainB.gain.value = micMonitorEnabled ? MIC_MONITOR_GAIN : 0;
+                    micGainB.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
                     channelSplitter.connect(micFilterB, 1);
                     micFilterB.connect(micGainB);
                     micGainB.connect(pannerB);
@@ -1211,9 +1225,9 @@
 
                     micFilterB = audioContext.createBiquadFilter();
                     micFilterB.type = 'lowpass';
-                    micFilterB.frequency.value = 100;
+                    micFilterB.frequency.value = params.MIC_FILTER_FREQ;
                     micGainB = audioContext.createGain();
-                    micGainB.gain.value = micMonitorEnabled ? MIC_MONITOR_GAIN : 0;
+                    micGainB.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
                     sourceB.connect(micFilterB);
                     micFilterB.connect(micGainB);
                     micGainB.connect(pannerB);
@@ -1565,8 +1579,8 @@
         document.getElementById('testB').addEventListener('click', simulatePeakB);
         document.getElementById('micMonitorToggle').addEventListener('change', e => {
             micMonitorEnabled = e.target.checked;
-            if (micGainA) micGainA.gain.value = micMonitorEnabled ? MIC_MONITOR_GAIN : 0;
-            if (micGainB) micGainB.gain.value = micMonitorEnabled ? MIC_MONITOR_GAIN : 0;
+            if (micGainA) micGainA.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
+            if (micGainB) micGainB.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
         });
 
         // Parameter controls
@@ -1582,6 +1596,20 @@
             document.getElementById('peakThresholdValue').textContent = e.target.value;
             detectorA.threshold = params.PEAK_THRESHOLD;
             detectorB.threshold = params.PEAK_THRESHOLD;
+        });
+
+        document.getElementById('micMonitorGain').addEventListener('input', (e) => {
+            params.MIC_MONITOR_GAIN_DB = parseFloat(e.target.value);
+            document.getElementById('micMonitorGainValue').textContent = e.target.value + ' dB';
+            if (micGainA) micGainA.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
+            if (micGainB) micGainB.gain.value = micMonitorEnabled ? dBToAmp(params.MIC_MONITOR_GAIN_DB) : 0;
+        });
+
+        document.getElementById('micFilterFreq').addEventListener('input', (e) => {
+            params.MIC_FILTER_FREQ = parseInt(e.target.value);
+            document.getElementById('micFilterFreqValue').textContent = e.target.value + ' Hz';
+            if (micFilterA) micFilterA.frequency.value = params.MIC_FILTER_FREQ;
+            if (micFilterB) micFilterB.frequency.value = params.MIC_FILTER_FREQ;
         });
 
         document.getElementById('triggerAFreq').addEventListener('input', (e) => {
