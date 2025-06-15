@@ -373,7 +373,7 @@
             <label style="display:flex;align-items:center;gap:5px;">
                 <input type="checkbox" id="useRemoteBpmB">Use Remote BPM for B
             </label>
-            <input type="text" id="remoteBpmUrl" placeholder="API URL">
+            <input type="text" id="remoteBpmUrl" placeholder="API URL" value="https://script.google.com/macros/s/AKfycbzN8dLfzPDpO4k19wOMwqWyzDWmPlY9hvinWy5YePOFhZppIhPBGW8rYCa7rlQ0OwzL/exec">
         </div>
         <div class="speaker-selectors">
             <label>Speaker 1:
@@ -839,7 +839,7 @@
 
         // Remote BPM settings
         let useRemoteBpmB = false;
-        let remoteBpmUrl = '';
+        let remoteBpmUrl = 'https://script.google.com/macros/s/AKfycbzN8dLfzPDpO4k19wOMwqWyzDWmPlY9hvinWy5YePOFhZppIhPBGW8rYCa7rlQ0OwzL/exec';
         let remoteBpm = 0;
         let remoteBpmInterval = null;
 
