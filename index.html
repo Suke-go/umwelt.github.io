@@ -336,6 +336,9 @@
             <button id="stopBtn" disabled>Stop Audio</button>
             <button id="testA" disabled>Test Peak A</button>
             <button id="testB" disabled>Test Peak B</button>
+            <label style="display:flex;align-items:center;gap:5px;">
+                <input type="checkbox" id="micMonitorToggle">Monitor Mics
+            </label>
         </div>
 
         <div class="device-selectors">
@@ -535,11 +538,13 @@
         let sourceA, analyserA, filterA, gainA, pannerA;
         let droneOscA, droneFilterA, droneGainA;
         let triggerOscA, triggerGainA;
-        
+        let micFilterA, micGainA;
+
         // Audio nodes for Umwelt B
         let sourceB, analyserB, filterB, gainB, pannerB;
         let droneOscB, droneFilterB, droneGainB;
         let triggerOscB, triggerGainB;
+        let micFilterB, micGainB;
 
         let channelSplitter;
 
@@ -555,6 +560,10 @@
 
         // Test mode flag
         let isTestMode = false;
+
+        // Microphone monitoring
+        const MIC_MONITOR_GAIN = Math.pow(10, 28 / 20); // ~28 dB
+        let micMonitorEnabled = false;
 
         // Parameters
         const params = {
@@ -838,6 +847,15 @@
                 micStreamA = stream;
                 sourceA = audioContext.createMediaStreamSource(stream);
                 sourceA.connect(filterA);
+
+                micFilterA = audioContext.createBiquadFilter();
+                micFilterA.type = 'lowpass';
+                micFilterA.frequency.value = 100;
+                micGainA = audioContext.createGain();
+                micGainA.gain.value = micMonitorEnabled ? MIC_MONITOR_GAIN : 0;
+                sourceA.connect(micFilterA);
+                micFilterA.connect(micGainA);
+                micGainA.connect(pannerA);
                 updateStatus('Microphone A connected', 'success');
                 isTestMode = false;
             } catch (error) {
@@ -913,7 +931,18 @@
                         sourceA.disconnect();
                         sourceA.connect(channelSplitter);
                         channelSplitter.connect(filterA, 0);
+                        if (micFilterA) channelSplitter.connect(micFilterA, 0);
                     }
+
+                    micFilterB = audioContext.createBiquadFilter();
+                    micFilterB.type = 'lowpass';
+                    micFilterB.frequency.value = 100;
+                    micGainB = audioContext.createGain();
+                    micGainB.gain.value = micMonitorEnabled ? MIC_MONITOR_GAIN : 0;
+                    channelSplitter.connect(micFilterB, 1);
+                    micFilterB.connect(micGainB);
+                    micGainB.connect(pannerB);
+
                     channelSplitter.connect(filterB, 1);
                     sourceB = channelSplitter;
                 } else {
@@ -928,6 +957,15 @@
                     micStreamB = stream;
                     sourceB = audioContext.createMediaStreamSource(stream);
                     sourceB.connect(filterB);
+
+                    micFilterB = audioContext.createBiquadFilter();
+                    micFilterB.type = 'lowpass';
+                    micFilterB.frequency.value = 100;
+                    micGainB = audioContext.createGain();
+                    micGainB.gain.value = micMonitorEnabled ? MIC_MONITOR_GAIN : 0;
+                    sourceB.connect(micFilterB);
+                    micFilterB.connect(micGainB);
+                    micGainB.connect(pannerB);
                 }
             } catch (error) {
                 const testOsc = audioContext.createOscillator();
@@ -1213,6 +1251,10 @@
                 audioContext.close();
                 audioContext = null;
                 channelSplitter = null;
+                micFilterA = null;
+                micGainA = null;
+                micFilterB = null;
+                micGainB = null;
             }
             outputNodes.forEach(node => {
                 try {
@@ -1270,6 +1312,11 @@
         document.getElementById('stopBtn').addEventListener('click', stopAudio);
         document.getElementById('testA').addEventListener('click', simulatePeakA);
         document.getElementById('testB').addEventListener('click', simulatePeakB);
+        document.getElementById('micMonitorToggle').addEventListener('change', e => {
+            micMonitorEnabled = e.target.checked;
+            if (micGainA) micGainA.gain.value = micMonitorEnabled ? MIC_MONITOR_GAIN : 0;
+            if (micGainB) micGainB.gain.value = micMonitorEnabled ? MIC_MONITOR_GAIN : 0;
+        });
 
         // Parameter controls
         document.getElementById('lowpassFreq').addEventListener('input', (e) => {
