@@ -155,6 +155,13 @@
             border: none;
             border-radius: 5px;
         }
+        .fake-bpm {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            align-items: center;
+            margin-bottom: 20px;
+        }
         .speaker-selectors {
             display: flex;
             flex-wrap: wrap;
@@ -374,6 +381,10 @@
                 <input type="checkbox" id="useRemoteBpmB">Use Remote BPM for B
             </label>
             <input type="text" id="remoteBpmUrl" placeholder="API URL" value="https://script.google.com/macros/s/AKfycbzN8dLfzPDpO4k19wOMwqWyzDWmPlY9hvinWy5YePOFhZppIhPBGW8rYCa7rlQ0OwzL/exec">
+        </div>
+        <div class="fake-bpm">
+            <button id="generateFakeBpm">フェイクBPM生成</button>
+            <span id="fakeBpmOutput"></span>
         </div>
         <div class="speaker-selectors">
             <label>Speaker 1:
@@ -850,6 +861,9 @@
         let remoteBpm = 0;
         let remoteBpmInterval = null;
 
+        // Fake BPM generation
+        let fakeBpmData = [];
+
 
         // Test mode flag
         let isTestMode = false;
@@ -875,6 +889,12 @@
             } catch (err) {
                 console.error('Error fetching remote BPM:', err);
             }
+        }
+
+        function generateFakeBpmData() {
+            fakeBpmData = Array.from({ length: 5 }, () => Math.floor(Math.random() * 21) + 60);
+            const outEl = document.getElementById('fakeBpmOutput');
+            if (outEl) outEl.textContent = fakeBpmData.join(', ');
         }
 
         // Parameters
@@ -1709,6 +1729,8 @@
         document.getElementById('remoteBpmUrl').addEventListener('change', e => {
             remoteBpmUrl = e.target.value.trim();
         });
+
+        document.getElementById('generateFakeBpm').addEventListener('click', generateFakeBpmData);
 
         // Parameter controls
         document.getElementById('lowpassFreq').addEventListener('input', (e) => {
